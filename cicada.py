@@ -291,6 +291,102 @@ def configure_https(cfg: Config):
     print("HTTPS配置完成。")
 
 
+#update project | 更新项目
+def update_project(cfg: Config):
+    print("\n[9] 更新项目")
+    repo_path = Path(cfg.repo_dir)
+    if not repo_path.exists():
+        raise RuntimeError(f"项目目录不存在：{cfg.repo_dir}")
+
+    if not (repo_path / ".git").exists():
+        raise RuntimeError(f"{cfg.repo_dir} 不是一个Git仓库")
+
+    branch = input(f"更新分支[{cfg.git_branch}]: ").strip() or cfg.git_branch
+    cfg.git_branch = branch
+
+    print(f"\n开始更新项目：{cfg.project_name}")
+    print(f"目标分支：{branch}\n")
+
+    py = f"{cfg.venv_dir}/bin/python"
+    pip = f"{cfg.venv_dir}/bin/pip"
+
+    run("git fetch origin", cwd=cfg.repo_dir)
+    run(f"git checkout {branch}", cwd=cfg.repo_dir)
+    run(f"git pull origin {branch}", cwd=cfg.repo_dir)
+    run(f"git reset --hard origin/{branch}", cwd=cfg.repo_dir)
+
+    req = repo_path / "requirements.txt"
+    if req.exists():
+        run(f"{pip} install -r requirements.txt", cwd=cfg.repo_dir)
+
+    manage_py = repo_path / "manage.py"
+    if manage_py.exists():
+        run(
+            f"bash -lc 'source {cfg.venv_dir}/bin/activate && {py} manage.py migrate'",
+            cwd=cfg.repo_dir,
+        )
+
+        run(
+            f"bash -lc 'source {cfg.venv_dir}/bin/activate && {py} manage.py collectstatic --noinput'",
+            cwd=cfg.repo_dir,
+        )
+
+    else:
+        print("未检测到manage.py，跳过migrate和collectstatic")
+
+    run(f"sudo systemctl restart {cfg.service_name}")
+    run("sudo systemctl reload nginx")
+
+    print("项目更新完成。")
+
+
+#quick update | 快速更新
+def quick_update_project(cfg: Config):
+    print("\n[10] 快速更新项目")
+
+    repo_path = Path(cfg.repo_dir)
+
+    if not repo_path.exists():
+        raise RuntimeError(f"项目目录不存在：{cfg.repo_dir}")
+
+    if not (repo_path / ".git").exists():
+        raise RuntimeError(f"{cfg.repo_dir} 不是一个Git仓库")
+
+    branch = cfg.git_branch
+    print(f"\n开始快速更新项目：{cfg.project_name}")
+    print(f"使用默认分支：{branch}\n")
+
+    py = f"{cfg.venv_dir}/bin/python"
+    pip = f"{cfg.venv_dir}/bin/pip"
+
+    run("git fetch origin", cwd=cfg.repo_dir)
+    run(f"git checkout {branch}", cwd=cfg.repo_dir)
+    run(f"git pull origin {branch}", cwd=cfg.repo_dir)
+    run(f"git reset --hard origin/{branch}", cwd=cfg.repo_dir)
+
+    req = repo_path / "requirements.txt"
+    if req.exists():
+        run(f"{pip} install -r requirements.txt", cwd=cfg.repo_dir)
+
+    manage_py = repo_path / "manage.py"
+    if manage_py.exists():
+        run(
+            f"bash -lc 'source {cfg.venv_dir}/bin/activate && {py} manage.py migrate'",
+            cwd=cfg.repo_dir,
+        )
+        run(
+            f"bash -lc 'source {cfg.venv_dir}/bin/activate && {py} manage.py collectstatic --noinput'",
+            cwd=cfg.repo_dir,
+        )
+    else:
+        print("未检测到manage.py，跳过migrate和collectstatic")
+
+    run(f"sudo systemctl restart {cfg.service_name}")
+    run("sudo systemctl reload nginx")
+
+    print("快速更新完成。")
+
+
 #show summary | 显示当前全部配置的摘要
 def show_summary(cfg: Config):
     print("\n" + "=" * 60)
@@ -314,19 +410,23 @@ def menu(cfg: Config):
         "5": lambda: configure_https(cfg),
         "6": lambda: run_optional_django_tasks(cfg),
         "7": lambda: (setup_environment(cfg), clone_project(cfg), run_optional_django_tasks(cfg), configure_gunicorn(cfg), configure_nginx(cfg), configure_https(cfg)),
-        "8": lambda: show_summary(cfg),
+        "8": lambda: update_project(cfg),
+        "9": lambda: quick_update_project(cfg),
+        "10": lambda: show_summary(cfg),
     }
     while True:
         show_summary(cfg)
         print("请选择操作:")
         print("1) 配置环境")
-        print("2) 项目拉取（GitHub）")
+        print("2) GitHub项目拉取")
         print("3) Gunicorn自动配置")
         print("4) Nginx自动配置")
         print("5) HTTPS自动配置")
         print("6) 数据库迁移和收集静态文件")
         print("7) 全部执行 1 → 6")
-        print("8) 展示当前配置")
+        print("8) 选择分支进行更新")
+        print("9) 快速更新")
+        print("10) 展示当前配置")
         print("0) 退出")
         choice = input("输入编号: ").strip()
         if choice == "0":

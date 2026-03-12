@@ -75,7 +75,7 @@ If I want to use CICADA, what should I do first?
 
 　　　　Now you can run CICADA!
 
-    python3 cicada_v0.1.0.py
+    sudo python cicada_v0.1.0.py
 
 　　　　or
 
