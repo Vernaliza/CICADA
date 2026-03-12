@@ -34,7 +34,7 @@ def show_banner():
       ██║      ██║██║     ███████║██║  ██║███████║
       ██║      ██║██║     ██╔══██║██║  ██║██╔══██║
       ╚██████╗ ██║╚██████╗██║  ██║██████╔╝██║  ██║
-       ╚═════╝ ╚═╝ ╚═════╝╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝  v1.1
+       ╚═════╝ ╚═╝ ╚═════╝╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝  v0.1.0
 
         CICADA: Command-line Integration for Continuous Automated Django Administration
         https://github.com/Vernaliza/CICADA
