@@ -60,22 +60,18 @@ If I want to use CICADA, what should I do first?
 
 　　　　After that, run CICADA in your Linux server.
 
-　　　　In version, you have to apt python first.
 
-    sudo apt update
-    sudo apt install python3 python3-pip -y
 
 　　　　You need to enter the holder where CICADA is.
 
     cd <the place where CICADA is>
 
+　　　　If this is the first attempt, add this line:
+
+    chmod +x cicada.py 
+
 　　　　Now you can run CICADA!
 
-    sudo python cicada_v0.1.0.py
+    ./cicada.py
 
-　　　　or
-
-    chmod +x cicada_v0.1.0.py #this line only needs to be run on the first attempt
-    ./cicada_v0.1.0.py
-
-　　　　Now finish! Have fun!
+　　　　Have fun!
