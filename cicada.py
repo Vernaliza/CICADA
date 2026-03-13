@@ -3,7 +3,7 @@ import os
 import sys
 import subprocess
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from dataclasses import asdict
 from pathlib import Path
@@ -16,19 +16,21 @@ CONFIG_FILE = Path("deploy_configs.json")
 @dataclass
 class Config:
     project_name: str
-    domain: str
-    server_ip: str
-    git_url: str
-    git_branch: str
-    project_root: str
-    repo_dir: str
-    venv_dir: str
-    static_root: str
-    media_root: str
-    service_name: str
-    gunicorn_bind: str
-    email: str
-    use_mysql: bool
+    root_domain: str
+    subdomains: list[str] = field(default_factory=list)
+    server_ip: str = ""
+    git_url: str = ""
+    git_branch: str = "main"
+    project_root: str = ""
+    repo_dir: str = ""
+    venv_dir: str = ""
+    static_root: str = ""
+    media_root: str = ""
+    service_name: str = ""
+    gunicorn_bind: str = "127.0.0.1:8000"
+    email: str = ""
+    use_mysql: bool = True
+    include_ip_in_nginx: bool = True
 
 
 #show banner | 展示横幅
@@ -92,6 +94,43 @@ def prompt_bool(msg: str, default: bool = False) -> bool:
     return value in {"y", "yes", "1"}
 
 
+def prompt_list(msg: str, default: list[str] | None = None) -> list[str]:
+    default = default or []
+    hint = ",".join(default) if default else "多个值用逗号分隔"
+    raw = input(f"{msg} [{hint}]: ").strip()
+    if not raw:
+        return default
+
+    items = []
+    for part in raw.split(","):
+        value = part.strip().strip(".")
+        if value and value not in items:
+            items.append(value)
+    return items
+
+
+def build_full_domains(cfg: Config) -> list[str]:
+    full_domains = []
+
+    if not cfg.subdomains:
+        return [cfg.root_domain]
+
+    for sub in cfg.subdomains:
+        sub = sub.strip().strip(".")
+        if not sub:
+            continue
+
+        if sub == cfg.root_domain or sub.endswith(f".{cfg.root_domain}"):
+            fqdn = sub
+        else:
+            fqdn = f"{sub}.{cfg.root_domain}"
+
+        if fqdn not in full_domains:
+            full_domains.append(fqdn)
+
+    return full_domains
+
+
 #bulid a new config | 创建新配置
 def build_config_from_input() -> Config:
     print("需要root权限运行。")
@@ -101,12 +140,20 @@ def build_config_from_input() -> Config:
     if not project_name:
         raise SystemExit("项目名不能为空")
 
-    domain = input("2.域名（如example.com）: ").strip()
-    server_ip = input("3.服务器IP：").strip()
-    git_url = input("4.GitHub仓库地址：").strip()
-    git_branch = input("5.Git分支[main]: ").strip() or "main"
-    email = input("6.HTTPS邮箱（certbot使用，可留空）：").strip()
-    use_mysql = prompt_bool("7.项目是否使用MySQL驱动mysqlclient", default=False)
+    root_domain = input("2.根域名（如 bing.com）: ").strip().strip(".")
+    if not root_domain:
+        raise SystemExit("根域名不能为空")
+
+    subdomains = prompt_list(
+        "3.域名前缀（若添加多个前缀可用逗号分开，如：www,aaa,bbb）回车可跳过此项:")
+
+
+    server_ip = input("4.服务器IP：").strip()
+    git_url = input("5.GitHub仓库地址：").strip()
+    git_branch = input("6.Git分支[main]: ").strip() or "main"
+    email = input("7.HTTPS邮箱（certbot使用，可留空）：").strip()
+    use_mysql = prompt_bool("8.项目是否使用MySQL驱动mysqlclient", default=False)
+    include_ip_in_nginx = prompt_bool("9.Nginx的server_name是否包含服务器IP", default=True)
 
     project_root = f"/root/{project_name}"
     repo_dir = project_root
@@ -118,7 +165,8 @@ def build_config_from_input() -> Config:
 
     return Config(
         project_name=project_name,
-        domain=domain,
+        root_domain=root_domain,
+        subdomains=subdomains,
         server_ip=server_ip,
         git_url=git_url,
         git_branch=git_branch,
@@ -131,6 +179,7 @@ def build_config_from_input() -> Config:
         gunicorn_bind=gunicorn_bind,
         email=email,
         use_mysql=use_mysql,
+        include_ip_in_nginx=include_ip_in_nginx,
     )
 
 
@@ -159,11 +208,13 @@ def save_config_list(configs: list[dict]) -> None:
 #choose config | 选择配置
 def choose_config(configs: list[dict]) -> dict:
     if not configs:
-        raise SystemExit("当前没有可用配置，请先创建。")
+        #raise SystemExit("当前没有可用配置，请先创建。")
+        print("当前没有可用配置，请先创建。")
+        return None
 
     print("\n已有配置：")
     for i, cfg in enumerate(configs, start=1):
-        print(f"{i}) {cfg['project_name']}  [{cfg.get('domain', '')}]")
+        print(f"{i}) {cfg['project_name']}  [{cfg.get('root_domain', '')}]")
 
     while True:
         raw = input("请选择配置编号：").strip()
@@ -182,7 +233,7 @@ def delete_config(configs: list[dict]) -> list[dict]:
 
     print("\n可删除配置：")
     for i, cfg in enumerate(configs, start=1):
-        print(f"{i}) {cfg['project_name']}  [{cfg.get('domain', '')}]")
+        print(f"{i}) {cfg['project_name']}  [{cfg.get('root_domain', '')}]")
 
     while True:
         raw = input("请输入要删除的配置编号：").strip()
@@ -212,6 +263,8 @@ def collect_config() -> Config:
 
         if choice == "1":
             selected = choose_config(configs)
+            if selected is None:
+                continue
             print(f"已加载配置：{selected['project_name']}")
             return Config(**selected)
 
@@ -366,7 +419,19 @@ def configure_gunicorn(cfg: Config):
 #configure Nginx | 配置 Nginx
 def configure_nginx(cfg: Config):
     print("\nNginx 自动配置")
-    server_names = " ".join([x for x in {cfg.domain, f'www.{cfg.domain}', cfg.server_ip} if x])
+
+
+    full_domains = build_full_domains(cfg)
+    if not full_domains:
+        raise RuntimeError("没有可用域名，请检查root_domain和subdomains配置。")
+
+    server_name_items = list(full_domains)
+    if cfg.include_ip_in_nginx and cfg.server_ip:
+        if cfg.server_ip not in server_name_items:
+            server_name_items.append(cfg.server_ip)
+
+    server_names = " ".join(server_name_items)
+
     nginx_content = f"""server {{
     listen 80;
     server_name {server_names};
@@ -402,11 +467,15 @@ def configure_nginx(cfg: Config):
     enabled_path = Path(enabled)
     if not enabled_path.exists():
         enabled_path.symlink_to(available)
-        print(f"已启用站点: {enabled}")
+        print(f"已启用站点：{enabled}")
 
     run("nginx -t")
     run("systemctl reload nginx")
+
     print("Nginx配置完成。")
+    print("当前server_name：")
+    for item in server_name_items:
+        print(f" - {item}")
 
 
 #run optional django tasks | 执行Django管理命令，负责数据库迁移和收集静态文件
@@ -429,14 +498,26 @@ def run_optional_django_tasks(cfg: Config):
 #configure HTTPS | 申请HTTPS证书
 def configure_https(cfg: Config):
     print("\nHTTPS自动配置")
-    if not cfg.domain:
-        raise RuntimeError("域名不能为空，HTTPS 需要域名。")
-    if not prompt_bool("请确认域名已解析到本机且80/443端口已放行，继续申请证书吗", default=False):
+
+    full_domains = build_full_domains(cfg)
+    if not full_domains:
+        raise RuntimeError("没有可申请证书的域名，请检查 root_domain 和 subdomains 配置。")
+
+    print("准备申请证书的域名：")
+    for d in full_domains:
+        print(f" - {d}")
+
+    if not prompt_bool("请确认以上域名已解析到本机且80/443端口已放行，继续申请证书吗", default=False):
         print("已跳过HTTPS配置。")
         return
+
     email_part = f"--email {cfg.email}" if cfg.email else "--register-unsafely-without-email"
-    run(f"certbot --nginx {email_part} --agree-tos --no-eff-email -d {cfg.domain}") #-d www.{cfg.domain}
+    domain_args = " ".join(f"-d {d}" for d in full_domains)
+    expand_part = "--expand" if prompt_bool("若证书已存在，是否使用 --expand", default=True) else ""
+
+    run(f"certbot --nginx {expand_part} {email_part} --agree-tos --no-eff-email {domain_args}")
     run("certbot renew --dry-run", check=False)
+
     print("HTTPS配置完成。")
 
 
@@ -538,11 +619,15 @@ def quick_update_project(cfg: Config):
 
 #show summary | 显示当前全部配置的摘要
 def show_summary(cfg: Config):
+    full_domains = build_full_domains(cfg)
+
     print("\n" + "=" * 60)
     print("部署信息")
     print(f"项目名: {cfg.project_name}")
     print(f"项目目录: {cfg.repo_dir}")
-    print(f"域名: {cfg.domain}")
+    print(f"根域名: {cfg.root_domain}")
+    print(f"域名前缀: {', '.join(cfg.subdomains)}")
+    print(f"完整域名: {', '.join(full_domains)}")
     print(f"IP: {cfg.server_ip}")
     print(f"Gunicorn 服务: {cfg.service_name}")
     print(f"Nginx 站点: /etc/nginx/sites-available/{cfg.project_name}")
