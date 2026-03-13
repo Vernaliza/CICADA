@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="static/images/cicada.png" alt="Logo" width="300">
+  <img src="static/images/cicada.png" alt="Logo" width="400">
 </p>
 
 
