@@ -435,7 +435,7 @@ def configure_https(cfg: Config):
         print("已跳过HTTPS配置。")
         return
     email_part = f"--email {cfg.email}" if cfg.email else "--register-unsafely-without-email"
-    run(f"certbot --nginx {email_part} --agree-tos --no-eff-email -d {cfg.domain} -d www.{cfg.domain}")
+    run(f"certbot --nginx {email_part} --agree-tos --no-eff-email -d {cfg.domain}") #-d www.{cfg.domain}
     run("certbot renew --dry-run", check=False)
     print("HTTPS配置完成。")
 
