@@ -4,6 +4,12 @@ import sys
 import subprocess
 from pathlib import Path
 from dataclasses import dataclass
+import json
+from dataclasses import asdict
+from pathlib import Path
+
+
+CONFIG_FILE = Path("deploy_configs.json")
 
 
 #config | 配置对象
@@ -23,6 +29,7 @@ class Config:
     gunicorn_bind: str
     email: str
     use_mysql: bool
+
 
 #show banner | 展示横幅
 def show_banner():
@@ -85,20 +92,21 @@ def prompt_bool(msg: str, default: bool = False) -> bool:
     return value in {"y", "yes", "1"}
 
 
-#collect deployment parameters | 收集部署参数
-def collect_config() -> Config:
-    print("需要 root 权限运行。")
+#bulid a new config | 创建新配置
+def build_config_from_input() -> Config:
+    print("需要root权限运行。")
+    print("新建部署配置：")
 
-    project_name = input("0) 项目名: ").strip()
+    project_name = input("1.项目名：").strip()
     if not project_name:
         raise SystemExit("项目名不能为空")
 
-    domain = input("0) 域名（如 example.com）: ").strip()
-    server_ip = input("0) 服务器 IP: ").strip()
-    git_url = input("2) GitHub 仓库地址: ").strip()
-    git_branch = input("2) Git 分支 [main]: ").strip() or "main"
-    email = input("5) HTTPS 邮箱（certbot 用，可留空）: ").strip()
-    use_mysql = prompt_bool("项目是否使用 MySQL 驱动 mysqlclient", default=False)
+    domain = input("2.域名（如example.com）: ").strip()
+    server_ip = input("3.服务器IP：").strip()
+    git_url = input("4.GitHub仓库地址：").strip()
+    git_branch = input("5.Git分支[main]: ").strip() or "main"
+    email = input("6.HTTPS邮箱（certbot使用，可留空）：").strip()
+    use_mysql = prompt_bool("7.项目是否使用MySQL驱动mysqlclient", default=False)
 
     project_root = f"/root/{project_name}"
     repo_dir = project_root
@@ -126,60 +134,202 @@ def collect_config() -> Config:
     )
 
 
+#读取配置文件
+def load_config_list() -> list[dict]:
+    if not CONFIG_FILE.exists():
+        return []
+
+    try:
+        with CONFIG_FILE.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                return data
+    except Exception:
+        pass
+
+    return []
+
+
+#save config list | 将配置列表写入文件
+def save_config_list(configs: list[dict]) -> None:
+    with CONFIG_FILE.open("w", encoding="utf-8") as f:
+        json.dump(configs, f, ensure_ascii=False, indent=2)
+
+
+#choose config | 选择配置
+def choose_config(configs: list[dict]) -> dict:
+    if not configs:
+        raise SystemExit("当前没有可用配置，请先创建。")
+
+    print("\n已有配置：")
+    for i, cfg in enumerate(configs, start=1):
+        print(f"{i}) {cfg['project_name']}  [{cfg.get('domain', '')}]")
+
+    while True:
+        raw = input("请选择配置编号：").strip()
+        if raw.isdigit():
+            idx = int(raw) - 1
+            if 0 <= idx < len(configs):
+                return configs[idx]
+        print("输入无效，请重新输入。")
+
+
+#delete config | 删除配置
+def delete_config(configs: list[dict]) -> list[dict]:
+    if not configs:
+        print("当前没有可删除的配置。")
+        return configs
+
+    print("\n可删除配置：")
+    for i, cfg in enumerate(configs, start=1):
+        print(f"{i}) {cfg['project_name']}  [{cfg.get('domain', '')}]")
+
+    while True:
+        raw = input("请输入要删除的配置编号：").strip()
+        if raw.isdigit():
+            idx = int(raw) - 1
+            if 0 <= idx < len(configs):
+                removed = configs.pop(idx)
+                save_config_list(configs)
+                print(f"已删除配置：{removed['project_name']}")
+                return configs
+        print("输入无效，请重新输入。")
+#collect deployment parameters | 收集部署参数
+
+
+#the ui of config | 配置文件界面
+def collect_config() -> Config:
+    while True:
+        configs = load_config_list()
+
+        print("\n配置管理")
+        print("1) 从配置列表加载")
+        print("2) 创建新配置")
+        print("3) 删除配置")
+        print("4) 退出")
+
+        choice = input("请选择操作 [1/2/3/4]: ").strip()
+
+        if choice == "1":
+            selected = choose_config(configs)
+            print(f"已加载配置：{selected['project_name']}")
+            return Config(**selected)
+
+        elif choice == "2":
+            cfg = build_config_from_input()
+
+            existing_index = next(
+                (i for i, item in enumerate(configs) if item["project_name"] == cfg.project_name),
+                None,
+            )
+
+            if existing_index is not None:
+                overwrite = prompt_bool(
+                    f"已存在同名配置{cfg.project_name}，是否覆盖？",
+                    default=True
+                )
+                if overwrite:
+                    configs[existing_index] = asdict(cfg)
+                    print(f"已覆盖配置：{cfg.project_name}")
+                else:
+                    print("已取消保存，返回菜单。")
+                    continue
+            else:
+                configs.append(asdict(cfg))
+                print(f"已创建配置：{cfg.project_name}")
+
+            save_config_list(configs)
+            return cfg
+
+        elif choice == "3":
+            delete_config(configs)
+
+        elif choice == "4":
+            raise SystemExit("用户已退出。")
+
+        else:
+            print("无效选择，请重新输入。")
+
+
 #check root permission | 检查root权限
 def ensure_root():
     if os.geteuid() != 0:
-        raise SystemExit("请使用 sudo 或 root 运行此脚本。")
+        raise SystemExit("请使用sudo或root运行此脚本。")
 
 
 #这里往下是功能性函数了
 #set up environment | 配置服务器环境
+from pathlib import Path
+
 def setup_environment(cfg: Config):
-    print("\n[1] 配置环境")
-    run("apt update && apt upgrade -y")
-    run("apt install -y python3 python3-pip python3-venv nginx git certbot python3-certbot-nginx")
-    run("python3 -m pip install --upgrade pip")
+    print("\n一键环境配置")
+
+    env_prefix = "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a"
+    run(f"{env_prefix} apt update")
+    run(f"{env_prefix} apt upgrade -y")
+    run(f"{env_prefix} apt install -y python3-venv python3-dev pkg-config build-essential")
+    run(f"{env_prefix} apt install -y nginx git certbot python3-certbot-nginx")
+
+    if cfg.use_mysql:
+        run(f"{env_prefix} apt install -y default-libmysqlclient-dev")
+
     Path(cfg.project_root).mkdir(parents=True, exist_ok=True)
+
     if not Path(cfg.venv_dir).exists():
         run(f"python3 -m venv {cfg.venv_dir}")
-    run(f"mkdir -p {cfg.static_root}")
-    run(f"mkdir -p {cfg.media_root}")
+
+    run(f"{cfg.venv_dir}/bin/pip install --upgrade pip setuptools wheel")
+    run(f"{cfg.venv_dir}/bin/pip install pymysql")
+
+    Path(cfg.static_root).mkdir(parents=True, exist_ok=True)
+    Path(cfg.media_root).mkdir(parents=True, exist_ok=True)
+
     pip_install = f"{cfg.venv_dir}/bin/pip install django gunicorn psycopg2-binary"
     if cfg.use_mysql:
         pip_install += " mysqlclient"
+
     run(pip_install)
+
     print("环境配置完成。")
 
 
 #clone GitHub project | 拉取项目
 def clone_project(cfg: Config):
-    print("\n[2] 项目上传（GitHub）")
+    print("\nGitHub项目上传")
+
     if not cfg.git_url:
         raise RuntimeError("Git仓库地址不能为空。")
 
-    if Path(cfg.repo_dir).exists() and any(Path(cfg.repo_dir).iterdir()):
-        git_dir = Path(cfg.repo_dir) / ".git"
-        if git_dir.exists():
-            print("检测到已有git项目，执行拉取更新。")
-            run("git fetch --all", cwd=cfg.repo_dir)
-            run(f"git checkout {cfg.git_branch}", cwd=cfg.repo_dir)
-            run(f"git pull origin {cfg.git_branch}", cwd=cfg.repo_dir)
-        else:
-            raise RuntimeError(f"目录 {cfg.repo_dir} 已存在且非空，无法自动clone。")
+    repo_path = Path(cfg.repo_dir)
+    git_dir = repo_path / ".git"
+
+    if git_dir.exists():
+        print("检测到已有git项目，执行拉取更新。")
+        run("git fetch --all", cwd=cfg.repo_dir)
+        run(f"git checkout {cfg.git_branch}", cwd=cfg.repo_dir)
+        run(f"git pull origin {cfg.git_branch}", cwd=cfg.repo_dir)
+
+    elif repo_path.exists() and any(repo_path.iterdir()):
+        print("检测到目录已存在但不是git仓库，尝试初始化并拉取代码。")
+        run("git init", cwd=cfg.repo_dir)
+        run(f"git remote add origin {cfg.git_url}", cwd=cfg.repo_dir)
+        run(f"git fetch origin {cfg.git_branch}", cwd=cfg.repo_dir)
+        run(f"git checkout -b {cfg.git_branch} origin/{cfg.git_branch}", cwd=cfg.repo_dir)
+
     else:
-        parent = str(Path(cfg.repo_dir).parent)
-        Path(parent).mkdir(parents=True, exist_ok=True)
+        repo_path.parent.mkdir(parents=True, exist_ok=True)
         run(f"git clone -b {cfg.git_branch} {cfg.git_url} {cfg.repo_dir}")
 
-    req = Path(cfg.repo_dir) / "requirements.txt"
-    if req.exists():#Actually, there may not necessarily be project dependency files | 其实不一定有项目依赖文件的
+    req = repo_path / "requirements.txt"
+    if req.exists():
         run(f"{cfg.venv_dir}/bin/pip install -r requirements.txt", cwd=cfg.repo_dir)
+
     print("项目拉取完成。")
 
 
 #configure Gunicorn | 配置 Gunicorn
 def configure_gunicorn(cfg: Config):
-    print("\n[3] Gunicorn自动配置")
+    print("\nGunicorn自动配置")
     wsgi_module = detect_wsgi_module(cfg.repo_dir)
     gunicorn_test = f"{cfg.venv_dir}/bin/gunicorn --bind 0.0.0.0:8000 {wsgi_module}:application --daemon"
     kill_test = "pkill -f 'gunicorn --bind 0.0.0.0:8000' || true"
@@ -216,7 +366,7 @@ def configure_gunicorn(cfg: Config):
 
 #configure Nginx | 配置 Nginx
 def configure_nginx(cfg: Config):
-    print("\n[4] Nginx 自动配置")
+    print("\nNginx 自动配置")
     server_names = " ".join([x for x in {cfg.domain, f'www.{cfg.domain}', cfg.server_ip} if x])
     nginx_content = f"""server {{
     listen 80;
@@ -279,7 +429,7 @@ def run_optional_django_tasks(cfg: Config):
 
 #configure HTTPS | 申请HTTPS证书
 def configure_https(cfg: Config):
-    print("\n[5] HTTPS自动配置")
+    print("\nHTTPS自动配置")
     if not cfg.domain:
         raise RuntimeError("域名不能为空，HTTPS 需要域名。")
     if not prompt_bool("请确认域名已解析到本机且80/443端口已放行，继续申请证书吗", default=False):
@@ -293,7 +443,7 @@ def configure_https(cfg: Config):
 
 #update project | 更新项目
 def update_project(cfg: Config):
-    print("\n[9] 更新项目")
+    print("\n更新项目")
     repo_path = Path(cfg.repo_dir)
     if not repo_path.exists():
         raise RuntimeError(f"项目目录不存在：{cfg.repo_dir}")
@@ -342,7 +492,7 @@ def update_project(cfg: Config):
 
 #quick update | 快速更新
 def quick_update_project(cfg: Config):
-    print("\n[10] 快速更新项目")
+    print("\n快速更新项目")
 
     repo_path = Path(cfg.repo_dir)
 
@@ -400,6 +550,29 @@ def show_summary(cfg: Config):
     print("=" * 60)
 
 
+#start website | 启动网站
+def start_website(cfg: Config):
+    print("\n启动网站服务")
+    run(f"systemctl daemon-reload", check=False)
+    print("启动 Gunicorn 服务...")
+    run(f"systemctl restart {cfg.service_name}")
+    print("启动 Nginx...")
+    run("systemctl restart nginx")
+    print("网站服务已启动.")
+    print("\n服务状态：")
+    run(f"systemctl status {cfg.service_name} --no-pager", check=False)
+    run("systemctl status nginx --no-pager", check=False)
+
+
+#stop website | 停止网站
+def stop_website(cfg: Config):
+    print("\n[12] 停止网站")
+
+    run(f"systemctl stop {cfg.service_name}", check=False)
+    run("systemctl stop nginx", check=False)
+
+    print("网站已停止")
+
 #menu | 菜单
 def menu(cfg: Config):
     actions = {
@@ -412,7 +585,8 @@ def menu(cfg: Config):
         "7": lambda: (setup_environment(cfg), clone_project(cfg), run_optional_django_tasks(cfg), configure_gunicorn(cfg), configure_nginx(cfg), configure_https(cfg)),
         "8": lambda: update_project(cfg),
         "9": lambda: quick_update_project(cfg),
-        "10": lambda: show_summary(cfg),
+        "10": lambda: start_website(cfg),
+        "11": lambda: stop_website(cfg),
     }
     while True:
         show_summary(cfg)
@@ -426,7 +600,8 @@ def menu(cfg: Config):
         print("7) 全部执行 1 → 6")
         print("8) 选择分支进行更新")
         print("9) 快速更新")
-        print("10) 展示当前配置")
+        print("10) 启动网站")
+        print("11) 关闭网站")
         print("0) 退出")
         choice = input("输入编号: ").strip()
         if choice == "0":
