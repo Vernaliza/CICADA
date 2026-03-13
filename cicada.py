@@ -42,7 +42,7 @@ def show_banner():
       ██║      ██║██║     ███████║██║  ██║███████║
       ██║      ██║██║     ██╔══██║██║  ██║██╔══██║
       ╚██████╗ ██║╚██████╗██║  ██║██████╔╝██║  ██║
-       ╚═════╝ ╚═╝ ╚═════╝╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝  v0.1.0
+       ╚═════╝ ╚═╝ ╚═════╝╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝
 
         CICADA: Command-line Integration for Continuous Automated Django Administration
         https://github.com/Vernaliza/CICADA
@@ -267,8 +267,7 @@ def setup_environment(cfg: Config):
     env_prefix = "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a"
     run(f"{env_prefix} apt update")
     run(f"{env_prefix} apt upgrade -y")
-    run(f"{env_prefix} apt install -y python3-venv python3-dev pkg-config build-essential")
-    run(f"{env_prefix} apt install -y nginx git certbot python3-certbot-nginx")
+    run(f"{env_prefix} apt install -y python3-venv python3-dev pkg-config build-essential libjpeg-dev zlib1g-dev libpng-dev nginx git certbot python3-certbot-nginx")
 
     if cfg.use_mysql:
         run(f"{env_prefix} apt install -y default-libmysqlclient-dev")
@@ -284,7 +283,7 @@ def setup_environment(cfg: Config):
     Path(cfg.static_root).mkdir(parents=True, exist_ok=True)
     Path(cfg.media_root).mkdir(parents=True, exist_ok=True)
 
-    pip_install = f"{cfg.venv_dir}/bin/pip install django gunicorn psycopg2-binary"
+    pip_install = f"{cfg.venv_dir}/bin/pip install django gunicorn psycopg2-binary Pillow"
     if cfg.use_mysql:
         pip_install += " mysqlclient"
 
@@ -595,7 +594,7 @@ def menu(cfg: Config):
         print("2) GitHub项目拉取")
         print("3) Gunicorn自动配置")
         print("4) Nginx自动配置")
-        print("5) HTTPS自动配置")
+        print("5) HTTPS自动配置 #暂时有故障")
         print("6) 数据库迁移和收集静态文件")
         print("7) 全部执行 1 → 6")
         print("8) 选择分支进行更新")
