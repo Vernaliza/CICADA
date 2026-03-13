@@ -48,7 +48,7 @@ def show_banner():
         https://github.com/Vernaliza/CICADA
     """
     print("=" * 60)
-    print(color_banner + banner + reset_banner)
+    print(f"{color_banner}{banner}{reset_banner}")
     print("=" * 60)
 
 
