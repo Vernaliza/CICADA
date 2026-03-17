@@ -59,7 +59,7 @@ def run(cmd: str, check: bool = True, cwd: str | None = None):
     print(f"\n>>> {cmd}")
     result = subprocess.run(cmd, shell=True, cwd=cwd)
     if check and result.returncode != 0:
-        raise RuntimeError(f"命令执行失败：{cmd}")
+        raise RuntimeError(f"命令执行失败：")
     return result.returncode
 
 
@@ -145,12 +145,12 @@ def build_config_from_input() -> Config:
         raise SystemExit("根域名不能为空")
 
     subdomains = prompt_list(
-        "3.域名前缀（若添加多个前缀可用逗号分开，如：www,aaa,bbb）回车可跳过此项:")
+        "3.域名前缀（若添加多个前缀可用逗号分开，如：www,aaa,bbb,需要在settings里加上对应的完整域名）回车可跳过此项:")
 
 
     server_ip = input("4.服务器IP：").strip()
     git_url = input("5.GitHub仓库地址：").strip()
-    git_branch = input("6.Git分支[main]: ").strip() or "main"
+    git_branch = input("6.选择Git分支[默认main分支]: ").strip() or "main"
     email = input("7.HTTPS邮箱（certbot使用，可留空）：").strip()
     use_mysql = prompt_bool("8.项目是否使用MySQL驱动mysqlclient", default=False)
     include_ip_in_nginx = prompt_bool("9.Nginx的server_name是否包含服务器IP", default=True)
@@ -231,7 +231,7 @@ def delete_config(configs: list[dict]) -> list[dict]:
         print("当前没有可删除的配置。")
         return configs
 
-    print("\n可删除配置：")
+    print("\n可删除配置：") 
     for i, cfg in enumerate(configs, start=1):
         print(f"{i}) {cfg['project_name']}  [{cfg.get('root_domain', '')}]")
 
@@ -488,11 +488,11 @@ def run_optional_django_tasks(cfg: Config):
     try:
         run(f"{py} manage.py migrate", cwd=cfg.repo_dir)
     except Exception as e:
-        print(f"migrate失败，可稍后手动执行: {e}")
+        print(f" migrate失败，可稍后手动执行: {e}")
     try:
         run(f"{py} manage.py collectstatic --noinput", cwd=cfg.repo_dir)
     except Exception as e:
-        print(f"collectstatic失败，可稍后手动执行: {e}")
+        print(f" collectstatic失败，可稍后手动执行: {e}")
 
 
 #configure HTTPS | 申请HTTPS证书
@@ -629,8 +629,8 @@ def show_summary(cfg: Config):
     print(f"域名前缀: {', '.join(cfg.subdomains)}")
     print(f"完整域名: {', '.join(full_domains)}")
     print(f"IP: {cfg.server_ip}")
-    print(f"Gunicorn 服务: {cfg.service_name}")
-    print(f"Nginx 站点: /etc/nginx/sites-available/{cfg.project_name}")
+    print(f"Gunicorn服务: {cfg.service_name}")
+    print(f"Nginx站点: /etc/nginx/sites-available/{cfg.project_name}")
     print("=" * 60)
 
 
@@ -650,7 +650,7 @@ def start_website(cfg: Config):
 
 #stop website | 停止网站
 def stop_website(cfg: Config):
-    print("\n[12] 停止网站")
+    print("\n停止网站")
 
     run(f"systemctl stop {cfg.service_name}", check=False)
     run("systemctl stop nginx", check=False)
@@ -679,7 +679,7 @@ def menu(cfg: Config):
         print("2) GitHub项目拉取")
         print("3) Gunicorn自动配置")
         print("4) Nginx自动配置")
-        print("5) HTTPS自动配置 #暂时有故障")
+        print("5) HTTPS自动配置")
         print("6) 数据库迁移和收集静态文件")
         print("7) 全部执行 1 → 6")
         print("8) 选择分支进行更新")
